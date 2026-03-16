@@ -1,0 +1,5 @@
+version: "3.9"
+services:
+  alfred:
+    build: .
+    command: python scripts/run_cli.py

@@ -1,0 +1,1 @@
+class FatigueModel: pass

@@ -1,0 +1,1 @@
+class TelemetryMetrics: pass

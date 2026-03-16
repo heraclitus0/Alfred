@@ -1,0 +1,7 @@
+watchers:
+  device:
+    enabled: true
+    interval_seconds: 300
+  world:
+    enabled: false
+    interval_seconds: 900

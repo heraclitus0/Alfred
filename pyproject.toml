@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alfred-agent"
+version = "0.1.0"
+description = "Mission-centered consultation-driven executive agent"
+requires-python = ">=3.10"
+dependencies = [
+  "jinja2>=3.1.3",
+  "pyyaml>=6.0.1",
+  "pydantic>=2.6.4",
+  "python-dotenv>=1.0.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["alfred*"]

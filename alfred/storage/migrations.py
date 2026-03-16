@@ -1,0 +1,1 @@
+class StorageMigrations: pass

@@ -1,0 +1,1 @@
+class MusicPatterns: pass

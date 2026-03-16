@@ -1,0 +1,1 @@
+class ProjectBlockerDetector: pass

@@ -1,0 +1,4 @@
+summaries:
+  max_chars: 2000
+retrieval:
+  default_limit: 8

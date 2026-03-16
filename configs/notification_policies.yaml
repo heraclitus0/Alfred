@@ -1,0 +1,5 @@
+batching:
+  enabled: true
+  max_batch_size: 5
+quiet_hours:
+  enabled: false

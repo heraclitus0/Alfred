@@ -1,0 +1,4 @@
+[stubbed self_improvement response]
+I received the prompt and recommend a bounded, testable next step.
+Prompt excerpt: Context:
+{'target': 'prompts', 'weakness': 'Observed weakness in prompts: outputs are not yet as concrete and nuanced as desired.', 'evidence': {'target': 'prompts', 'symptoms': ['needs better specificity', 'needs more concrete next steps'], 'recent_context': [{'key': 'self_improvement:prompt quality', 'value': {'response': "[stubbed self_improvement response]\nI received the prompt and recommend a bounded, testable next step.\nPrompt excerpt: Previous thread summary:\n[stubbed self_improvement 

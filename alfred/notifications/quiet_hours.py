@@ -1,0 +1,1 @@
+class QuietHours: pass

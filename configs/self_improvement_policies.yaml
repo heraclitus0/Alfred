@@ -1,0 +1,11 @@
+rewrite_bounds:
+  allowed_targets:
+    - prompts
+    - summarizers
+    - heuristics
+    - recommendation_logic
+  forbidden_targets:
+    - kill_switch
+    - credential_guard
+    - approval_engine
+    - destructive_action_guard

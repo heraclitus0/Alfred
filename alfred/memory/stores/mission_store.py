@@ -1,0 +1,1 @@
+class MissionStore: pass

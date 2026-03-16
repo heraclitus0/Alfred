@@ -1,0 +1,4 @@
+prompts:
+  include_constraints: true
+  include_desired_outcome: true
+  include_non_goals: true

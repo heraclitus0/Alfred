@@ -1,0 +1,5 @@
+consultation:
+  allow_world_awareness: true
+  allow_interaction_refinement: true
+  allow_self_improvement: true
+  allow_mission_strategy: true

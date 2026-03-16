@@ -1,0 +1,5 @@
+app_name: Alfred
+version: 0.1.0
+runtime:
+  default_mode: PASSIVE
+  checkpoint_every_seconds: 60

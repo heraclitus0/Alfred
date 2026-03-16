@@ -1,0 +1,13 @@
+domains:
+  browser_open:
+    sensitivity: low
+    approval: false
+  prompt_consultation:
+    sensitivity: low
+    approval: false
+  sandbox_rewrite:
+    sensitivity: medium
+    approval: true
+  destructive_change:
+    sensitivity: critical
+    approval: true

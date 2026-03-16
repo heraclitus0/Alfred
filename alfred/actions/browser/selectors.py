@@ -1,0 +1,1 @@
+class BrowserSelectors: pass

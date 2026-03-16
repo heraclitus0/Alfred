@@ -1,0 +1,1 @@
+class LongArcReports: pass

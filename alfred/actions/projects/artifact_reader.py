@@ -1,0 +1,1 @@
+class ArtifactReader: pass
