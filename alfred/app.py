@@ -6,7 +6,7 @@ from alfred.memory.base import MemoryFacade
 from alfred.consultation.manager import ConsultationManager
 from alfred.research_threads.manager import ResearchThreadManager
 from alfred.prompts.prompt_engineer import PromptEngineer
-from alfred.llm.openai_client import OpenAIConsultClient
+from alfred.llm.gemini_client import GeminiConsultClient
 from alfred.actions.browser.operator import BrowserOperator
 from alfred.actions.projects.sandbox_manager import SandboxManager
 from alfred.self_improvement.diagnostics import DiagnosticsEngine
@@ -30,7 +30,7 @@ def build_runtime() -> AlfredRuntime:
     memory = MemoryFacade(db)
     thread_manager = ResearchThreadManager(memory)
     prompt_engineer = PromptEngineer()
-    llm_client = OpenAIConsultClient()
+    llm_client = GeminiConsultClient()
     browser = BrowserOperator()
     sandbox = SandboxManager()
     diagnostics = DiagnosticsEngine(memory)
