@@ -7,13 +7,13 @@ from alfred.llm.base import BaseConsultClient
 class GeminiConsultClient(BaseConsultClient):
     def __init__(self) -> None:
         self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model = "gemini-1.5-flash-latest"
+        self.model = "gemini-2.0-flash"
 
     def ask(self, prompt: str, thread_id: str | None = None, consultation_type: str | None = None) -> str:
         if not self.api_key:
             return self._stub(prompt, consultation_type)
         try:
-            url = f"https://generativelanguage.googleapis.com/v1/models/{self.model}:generateContent?key={self.api_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
             body = json.dumps({
                 "contents": [{"parts": [{"text": prompt}]}]
             }).encode()
