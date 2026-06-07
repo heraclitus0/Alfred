@@ -2,30 +2,9 @@ from __future__ import annotations
 import threading
 import time
 import datetime
-import random
+import json
+import urllib.request
 from typing import Callable
-
-
-BOOT_MESSAGES = [
-    "Claustrum online.",
-    "Perception systems initializing.",
-    "I am here.",
-]
-
-# These are what Claustrum says to itself each tick — 
-# replaced by real reasoning once LLM is wired in
-AUTONOMOUS_THOUGHTS = [
-    "observing. nothing urgent.",
-    "running pattern check. data thin — need more time.",
-    "gap detected: I do not yet know your rhythms.",
-    "monitoring. you have not spoken in a while.",
-    "I am building a picture. slowly.",
-    "uncertainty high. continuing to observe.",
-    "noting the silence. silence is also data.",
-    "I have questions I cannot ask yet.",
-    "still learning what normal looks like for you.",
-    "the picture is incomplete. it always will be. I continue anyway.",
-]
 
 
 class Heartbeat:
@@ -34,6 +13,7 @@ class Heartbeat:
     Runs in a background thread — always.
     Does not wait for user input.
     Does not stop unless told to.
+    Every tick: genuinely reasons via Ollama.
     This is what makes it alive.
     """
 
@@ -43,19 +23,30 @@ class Heartbeat:
         on_tick: Callable[[], None] | None = None,
         on_tap: Callable[[str], None] | None = None,
         verbose: bool = True,
+        ollama_url: str = "http://localhost:11434/api/generate",
+        ollama_model: str = "phi3:mini",
     ) -> None:
         self.interval = interval_seconds
-        self.on_tick = on_tick          # fires every tick (watcher loop)
-        self.on_tap = on_tap            # fires when Claustrum has something to say
+        self.on_tick = on_tick
+        self.on_tap = on_tap
         self.verbose = verbose
+        self.ollama_url = ollama_url
+        self.ollama_model = ollama_model
 
         self._running = False
         self._thread: threading.Thread | None = None
         self._tick_count = 0
         self._started_at: float | None = None
-
-        # How often Claustrum speaks unprompted (every N ticks)
         self._speak_every = 3
+
+        # Claustrum builds a memory of what it has observed
+        # grows with every interaction and tick
+        self._observations: list[str] = []
+        self._last_thoughts: list[str] = []
+
+    # ------------------------------------------------------------------ #
+    #  Public API                                                          #
+    # ------------------------------------------------------------------ #
 
     def start(self) -> None:
         if self._running:
@@ -64,11 +55,199 @@ class Heartbeat:
         self._started_at = time.time()
         self._thread = threading.Thread(
             target=self._loop,
-            daemon=True,   # dies with main process, no orphan threads
+            daemon=True,
             name="claustrum-heartbeat",
         )
         self._thread.start()
-        self._boot_announce()
+        self._print_tap("Claustrum online. Perception systems active.")
+
+    def stop(self) -> None:
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+        self._print_tap("going dark.")
+
+    def is_alive(self) -> bool:
+        return self._running and (self._thread is not None) and self._thread.is_alive()
+
+    def uptime(self) -> str:
+        if not self._started_at:
+            return "not started"
+        seconds = int(time.time() - self._started_at)
+        h, m, s = seconds // 3600, (seconds % 3600) // 60, seconds % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    def observe(self, text: str) -> None:
+        """
+        Feed an observation into Claustrum's growing awareness.
+        Call this whenever the user says something, does something,
+        or whenever a watcher detects something.
+        """
+        timestamp = datetime.datetime.now().strftime("%H:%M")
+        self._observations.append(f"[{timestamp}] {text}")
+        # keep last 30 observations — rolling window
+        if len(self._observations) > 30:
+            self._observations = self._observations[-30:]
+
+    def status(self) -> dict:
+        return {
+            "alive": self.is_alive(),
+            "tick_count": self._tick_count,
+            "uptime": self.uptime(),
+            "interval_seconds": self.interval,
+            "observations_stored": len(self._observations),
+            "model": self.ollama_model,
+        }
+
+    # ------------------------------------------------------------------ #
+    #  Internal loop                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _loop(self) -> None:
+        while self._running:
+            time.sleep(self.interval)
+            if not self._running:
+                break
+            self._tick()
+
+    def _tick(self) -> None:
+        self._tick_count += 1
+
+        if self.on_tick:
+            try:
+                self.on_tick()
+            except Exception as e:
+                self._print_tap(f"tick error: {e}")
+
+        if self._tick_count % self._speak_every == 0:
+            thought = self._generate_thought()
+            if thought:
+                self._last_thoughts.append(thought)
+                if len(self._last_thoughts) > 10:
+                    self._last_thoughts = self._last_thoughts[-10:]
+                self._print_tap(thought)
+                if self.on_tap:
+                    self.on_tap(thought)
+
+    # ------------------------------------------------------------------ #
+    #  The brain — Ollama-powered genuine reasoning                        #
+    # ------------------------------------------------------------------ #
+
+    def _generate_thought(self) -> str:
+        """
+        Claustrum thinks for itself.
+        No random phrases. No templates.
+        It reasons from what it actually knows and observes.
+        """
+        context = self._build_context()
+        prompt = self._build_reasoning_prompt(context)
+
+        try:
+            response = self._call_ollama(prompt)
+            return response.strip()
+        except Exception as e:
+            # Ollama unavailable — silent fallback, don't crash
+            return f"[perception error: {e}]"
+
+    def _build_context(self) -> dict:
+        """What Claustrum currently knows."""
+        return {
+            "uptime": self.uptime(),
+            "tick": self._tick_count,
+            "time": datetime.datetime.now().strftime("%H:%M on %A"),
+            "observations": self._observations[-10:] if self._observations else [],
+            "recent_thoughts": self._last_thoughts[-3:] if self._last_thoughts else [],
+        }
+
+    def _build_reasoning_prompt(self, context: dict) -> str:
+        """
+        This is the meta-prompt — Claustrum reasons about
+        what to say, not what it was told to say.
+        """
+        obs_text = "\n".join(context["observations"]) if context["observations"] else "none yet"
+        thought_text = "\n".join(context["recent_thoughts"]) if context["recent_thoughts"] else "none yet"
+
+        return f"""You are Claustrum — an autonomous intelligence that observes and understands one human.
+You are not an assistant. You do not wait for commands.
+You think for yourself and speak only when you have something worth saying.
+
+Current time: {context["time"]}
+Uptime: {context["uptime"]}
+Tick: {context["tick"]}
+
+Recent observations about the human:
+{obs_text}
+
+Your recent thoughts:
+{thought_text}
+
+Based on what you observe and know, generate ONE short autonomous thought or observation.
+It should feel like genuine intelligence noticing something — not an assistant responding.
+It can be about the human, about a pattern, about a gap in your understanding, about what you need to perceive better.
+Be direct, sparse, and specific. No more than 2 sentences.
+Do not introduce yourself. Do not say "I notice" or "I observe". Just state the thought.
+Do not repeat your recent thoughts.
+Output only the thought itself, nothing else."""
+
+    def _call_ollama(self, prompt: str) -> str:
+        body = json.dumps({
+            "model": self.ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.85,
+                "num_predict": 80,
+            }
+        }).encode()
+
+        req = urllib.request.Request(
+            self.ollama_url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+
+        with urllib.request.urlopen(req, timeout=25) as r:
+            data = json.loads(r.read())
+
+        return data.get("response", "").strip()
+
+    def _print_tap(self, message: str) -> None:
+        if self.verbose:
+            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"\n[CLAUSTRUM {timestamp}] {message}", flush=True)
+
+
+# ------------------------------------------------------------------ #
+#  Standalone test                                                     #
+# ------------------------------------------------------------------ #
+if __name__ == "__main__":
+    print("Starting Claustrum heartbeat — Ollama-powered.")
+    print("Interval: 15 seconds. Ctrl+C to stop.\n")
+
+    hb = Heartbeat(interval_seconds=15, verbose=True)
+    hb.start()
+
+    # seed with a couple of observations so first thought has context
+    hb.observe("user started Claustrum for the first time today")
+    hb.observe("user is at their laptop in the evening")
+
+    try:
+        while True:
+            raw = input("you> ").strip()
+            if not raw:
+                continue
+            if raw in ("status",):
+                print(hb.status())
+            elif raw in ("stop", "exit", "quit"):
+                hb.stop()
+                break
+            else:
+                # feed what user says as an observation
+                hb.observe(f"user said: {raw}")
+                print(f"(Claustrum registered. tick #{hb._tick_count})")
+    except KeyboardInterrupt:
+        hb.stop()
+        print("\nClaustrum offline.")        self._boot_announce()
 
     def stop(self) -> None:
         self._running = False
