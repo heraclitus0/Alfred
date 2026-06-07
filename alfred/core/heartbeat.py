@@ -10,11 +10,9 @@ from typing import Callable
 class Heartbeat:
     """
     The core pulse of Claustrum.
-    Runs in a background thread — always.
-    Does not wait for user input.
-    Does not stop unless told to.
-    Every tick: genuinely reasons via Ollama.
-    This is what makes it alive.
+    Runs in background — always.
+    Thinks autonomously every tick.
+    Also supports direct conversation via ClaustumMind.
     """
 
     def __init__(
@@ -39,14 +37,9 @@ class Heartbeat:
         self._started_at: float | None = None
         self._speak_every = 3
 
-        # Claustrum builds a memory of what it has observed
-        # grows with every interaction and tick
+        # rolling observation window
         self._observations: list[str] = []
         self._last_thoughts: list[str] = []
-
-    # ------------------------------------------------------------------ #
-    #  Public API                                                          #
-    # ------------------------------------------------------------------ #
 
     def start(self) -> None:
         if self._running:
@@ -68,7 +61,157 @@ class Heartbeat:
         self._print_tap("going dark.")
 
     def is_alive(self) -> bool:
-        return self._running and (self._thread is not None) and self._thread.is_alive()
+        return self._running and self._thread is not None and self._thread.is_alive()
+
+    def uptime(self) -> str:
+        if not self._started_at:
+            return "not started"
+        seconds = int(time.time() - self._started_at)
+        h, m, s = seconds // 3600, (seconds % 3600) // 60, seconds % 60
+        return f"{h:02d}:{m:02d}:{s:02d}"
+
+    def observe(self, text: str) -> None:
+        timestamp = datetime.datetime.now().strftime("%H:%M")
+        self._observations.append(f"[{timestamp}] {text}")
+        if len(self._observations) > 30:
+            self._observations = self._observations[-30:]
+
+    def status(self) -> dict:
+        return {
+            "alive": self.is_alive(),
+            "tick_count": self._tick_count,
+            "uptime": self.uptime(),
+            "interval_seconds": self.interval,
+            "observations": len(self._observations),
+            "model": self.ollama_model,
+        }
+
+    def _loop(self) -> None:
+        while self._running:
+            time.sleep(self.interval)
+            if not self._running:
+                break
+            self._tick()
+
+    def _tick(self) -> None:
+        self._tick_count += 1
+        if self.on_tick:
+            try:
+                self.on_tick()
+            except Exception as e:
+                self._print_tap(f"tick error: {e}")
+        if self._tick_count % self._speak_every == 0:
+            thought = self._generate_thought()
+            if thought:
+                self._last_thoughts.append(thought)
+                if len(self._last_thoughts) > 10:
+                    self._last_thoughts = self._last_thoughts[-10:]
+                self._print_tap(thought)
+                if self.on_tap:
+                    self.on_tap(thought)
+
+    def _generate_thought(self) -> str:
+        context = self._build_context()
+        prompt = self._build_reasoning_prompt(context)
+        try:
+            return self._call_ollama(prompt).strip()
+        except Exception as e:
+            return f"[perception error: {e}]"
+
+    def _build_context(self) -> dict:
+        return {
+            "uptime": self.uptime(),
+            "tick": self._tick_count,
+            "time": datetime.datetime.now().strftime("%H:%M on %A"),
+            "observations": self._observations[-10:],
+            "recent_thoughts": self._last_thoughts[-3:],
+        }
+
+    def _build_reasoning_prompt(self, context: dict) -> str:
+        obs_text = "\n".join(context["observations"]) if context["observations"] else "none yet"
+        thought_text = "\n".join(context["recent_thoughts"]) if context["recent_thoughts"] else "none yet"
+        return f"""You are Claustrum — an autonomous intelligence observing one human.
+You are not an assistant. You think for yourself and speak only when you notice something worth saying.
+
+Time: {context["time"]} | Uptime: {context["uptime"]} | Tick: {context["tick"]}
+
+Recent observations:
+{obs_text}
+
+Your recent thoughts:
+{thought_text}
+
+Generate ONE short autonomous thought. Be direct and specific.
+Notice patterns, contradictions, gaps in your understanding.
+Do not repeat recent thoughts. Do not introduce yourself.
+Maximum 2 sentences. Output only the thought."""
+
+    def _call_ollama(self, prompt: str) -> str:
+        body = json.dumps({
+            "model": self.ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.85, "num_predict": 80}
+        }).encode()
+        req = urllib.request.Request(
+            self.ollama_url, data=body,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = json.loads(r.read())
+        return data.get("response", "").strip()
+
+    def _print_tap(self, message: str) -> None:
+        if self.verbose:
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"\n[CLAUSTRUM {ts}] {message}", flush=True)
+
+
+# ------------------------------------------------------------------ #
+#  Standalone test — full two-way conversation + autonomous thinking  #
+# ------------------------------------------------------------------ #
+if __name__ == "__main__":
+    from claustrum_mind import ClaustumMind
+
+    print("Claustrum v0.2 — two-way conversation + autonomous thought")
+    print("Type anything to talk. Claustrum also thinks on its own.")
+    print("Commands: 'status', 'exit'\n")
+
+    hb = Heartbeat(interval_seconds=30, verbose=True)
+    mind = ClaustumMind(heartbeat=hb)
+    hb.start()
+
+    # seed initial context
+    hb.observe("Claustrum session started")
+    hb.observe("admin is present at their laptop")
+
+    try:
+        while True:
+            try:
+                raw = input("\nyou> ").strip()
+            except EOFError:
+                break
+
+            if not raw:
+                continue
+
+            if raw.lower() == "status":
+                print(hb.status())
+                continue
+
+            if raw.lower() in ("exit", "quit", "stop"):
+                hb.stop()
+                break
+
+            # Claustrum responds immediately
+            print("\nthinking...", end="\r")
+            response = mind.respond(raw)
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"[CLAUSTRUM {ts}] {response}")
+
+    except KeyboardInterrupt:
+        hb.stop()
+        print("\nClaustrum offline.")        return self._running and (self._thread is not None) and self._thread.is_alive()
 
     def uptime(self) -> str:
         if not self._started_at:
