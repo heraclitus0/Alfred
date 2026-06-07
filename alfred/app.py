@@ -21,6 +21,7 @@ from alfred.missions.manager import MissionManager
 from alfred.notifications.manager import NotificationManager
 from alfred.watchers.manager import WatcherManager
 from alfred.user_model.primary_core import PrimaryCore
+from alfred.core.heartbeat import Heartbeat
 
 
 def build_runtime() -> AlfredRuntime:
@@ -72,4 +73,9 @@ def build_runtime() -> AlfredRuntime:
         kill_switch=kill_switch,
         primary_core=primary,
     )
+    
+
+    heartbeat = Heartbeat(interval_seconds=30, verbose=True)
+    runtime.registry.register("heartbeat", heartbeat)
+    
     return runtime
