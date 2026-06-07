@@ -24,7 +24,7 @@ class Heartbeat:
         on_tap: Callable[[str], None] | None = None,
         verbose: bool = True,
         ollama_url: str = "http://localhost:11434/api/generate",
-        ollama_model: str = "phi3:mini",
+        ollama_model: str = "llama3.2",
     ) -> None:
         self.interval = interval_seconds
         self.on_tick = on_tick
@@ -96,6 +96,158 @@ class Heartbeat:
             "uptime": self.uptime(),
             "interval_seconds": self.interval,
             "observations_stored": len(self._observations),
+            "model": self.ollama_model,
+        }
+
+    # ------------------------------------------------------------------ #
+    #  Internal loop                                                       #
+    # ------------------------------------------------------------------ #
+
+    def _loop(self) -> None:
+        while self._running:
+            time.sleep(self.interval)
+            if not self._running:
+                break
+            self._tick()
+
+    def _tick(self) -> None:
+        self._tick_count += 1
+
+        if self.on_tick:
+            try:
+                self.on_tick()
+            except Exception as e:
+                self._print_tap(f"tick error: {e}")
+
+        if self._tick_count % self._speak_every == 0:
+            thought = self._generate_thought()
+            if thought:
+                self._last_thoughts.append(thought)
+                if len(self._last_thoughts) > 10:
+                    self._last_thoughts = self._last_thoughts[-10:]
+                self._print_tap(thought)
+                if self.on_tap:
+                    self.on_tap(thought)
+
+    # ------------------------------------------------------------------ #
+    #  The brain — Ollama-powered genuine reasoning                        #
+    # ------------------------------------------------------------------ #
+
+    def _generate_thought(self) -> str:
+        """
+        Claustrum thinks for itself.
+        No random phrases. No templates.
+        It reasons from what it actually knows and observes.
+        """
+        context = self._build_context()
+        prompt = self._build_reasoning_prompt(context)
+
+        try:
+            response = self._call_ollama(prompt)
+            return response.strip()
+        except Exception as e:
+            # Ollama unavailable — silent fallback, don't crash
+            return f"[perception error: {e}]"
+
+    def _build_context(self) -> dict:
+        """What Claustrum currently knows."""
+        return {
+            "uptime": self.uptime(),
+            "tick": self._tick_count,
+            "time": datetime.datetime.now().strftime("%H:%M on %A"),
+            "observations": self._observations[-10:] if self._observations else [],
+            "recent_thoughts": self._last_thoughts[-3:] if self._last_thoughts else [],
+        }
+
+    def _build_reasoning_prompt(self, context: dict) -> str:
+        """
+        This is the meta-prompt — Claustrum reasons about
+        what to say, not what it was told to say.
+        """
+        obs_text = "\n".join(context["observations"]) if context["observations"] else "none yet"
+        thought_text = "\n".join(context["recent_thoughts"]) if context["recent_thoughts"] else "none yet"
+
+        return f"""You are Claustrum — an autonomous intelligence that observes and understands one human.
+You are not an assistant. You do not wait for commands.
+You think for yourself and speak only when you have something worth saying.
+
+Current time: {context["time"]}
+Uptime: {context["uptime"]}
+Tick: {context["tick"]}
+
+Recent observations about the human:
+{obs_text}
+
+Your recent thoughts:
+{thought_text}
+
+Based on what you observe and know, generate ONE short autonomous thought or observation.
+It should feel like genuine intelligence noticing something — not an assistant responding.
+It can be about the human, about a pattern, about a gap in your understanding, about what you need to perceive better.
+Be direct, sparse, and specific. No more than 2 sentences.
+Do not introduce yourself. Do not say "I notice" or "I observe". Just state the thought.
+Do not repeat your recent thoughts.
+Output only the thought itself, nothing else."""
+
+    def _call_ollama(self, prompt: str) -> str:
+        body = json.dumps({
+            "model": self.ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.85,
+                "num_predict": 80,
+            }
+        }).encode()
+
+        req = urllib.request.Request(
+            self.ollama_url,
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = json.loads(r.read())
+
+        return data.get("response", "").strip()
+
+    def _print_tap(self, message: str) -> None:
+        if self.verbose:
+            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"\n[CLAUSTRUM {timestamp}] {message}", flush=True)
+
+
+# ------------------------------------------------------------------ #
+#  Standalone test                                                     #
+# ------------------------------------------------------------------ #
+if __name__ == "__main__":
+    print("Starting Claustrum heartbeat — Ollama-powered.")
+    print("Interval: 15 seconds. Ctrl+C to stop.\n")
+
+    hb = Heartbeat(interval_seconds=15, verbose=True)
+    hb.start()
+
+    # seed with a couple of observations so first thought has context
+    hb.observe("user started Claustrum for the first time today")
+    hb.observe("user is at their laptop in the evening")
+
+    try:
+        while True:
+            raw = input("you> ").strip()
+            if not raw:
+                continue
+            if raw in ("status",):
+                print(hb.status())
+            elif raw in ("stop", "exit", "quit"):
+                hb.stop()
+                break
+            else:
+                # feed what user says as an observation
+                hb.observe(f"user said: {raw}")
+                print(f"(Claustrum registered. tick #{hb._tick_count})")
+    except KeyboardInterrupt:
+        hb.stop()
+        print("\nClaustrum offline.")            "observations_stored": len(self._observations),
             "model": self.ollama_model,
         }
 
